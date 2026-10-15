@@ -1,0 +1,47 @@
+# Taruh file ini di repo GitHub kamu sebagai:  .github/workflows/build.yml
+# Lalu buka tab Actions -> "Build libvoicefx" -> Run workflow.
+# (libdobby.so TIDAK dibuild di sini; ambil dari rilis Dobby atau pakai yang sudah kamu punya.)
+name: Build libvoicefx
+on:
+  workflow_dispatch:
+  push:
+    paths: ['voicefx.cpp', '.github/workflows/build.yml']
+
+jobs:
+  voicefx:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: armeabi-v7a
+            triple: armv7a-linux-androideabi21
+          - abi: arm64-v8a
+            triple: aarch64-linux-android21
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ambil RubberBand
+        run: |
+          git clone --depth 1 --branch v4.0.0 https://github.com/breakfastquay/rubberband.git rb \
+            || git clone --depth 1 https://github.com/breakfastquay/rubberband.git rb
+
+      - name: Compile libvoicefx.so
+        run: |
+          TC=$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          mkdir -p out
+          $TC/${{ matrix.triple }}-clang++ -shared -fPIC -O3 -std=c++17 \
+            -fvisibility=hidden -ffast-math -DNDEBUG \
+            -DUSE_BQRESAMPLER -DNO_THREAD_CHECKS -DNO_TIMING -DUSE_PTHREADS \
+            -I rb \
+            voicefx.cpp rb/single/RubberBandSingle.cpp \
+            -static-libstdc++ -Wl,--exclude-libs,ALL -Wl,-soname,libvoicefx.so \
+            -llog -ldl -lm \
+            -o out/libvoicefx.so
+          $TC/llvm-strip --strip-unneeded out/libvoicefx.so
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libvoicefx-${{ matrix.abi }}
+          path: out/libvoicefx.so
